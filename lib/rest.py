@@ -5,7 +5,6 @@ import requests
 import time
 
 from lib.log import *
-#from lib.repo import get_unified_release
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -155,9 +154,6 @@ class RestGraphqlApi(object):
     def get_node_names(self, router_name):
         return [n['name'] for n in self.get_nodes(router_name)]
 
-    # def get_system_name(self):
-    #     return self.get('/system').json()['router']
-    #
     def get_upgrade_versions(self, cached=True):
         releases = []
         cache_location = self.release_cache_location
@@ -193,6 +189,10 @@ class RestGraphqlApi(object):
                 self.assets = r.json()
                 self.assets_fetched_ts = now
 
+    def write_assets_data(self):
+        with open('/tmp/assets.json', 'w') as fd:
+            json.dump(self.assets, fd)
+
     def get_running_release(self, router_name):
         releases = {}
         self.get_assets()
@@ -206,7 +206,6 @@ class RestGraphqlApi(object):
         for asset in self.assets:
             router_name = asset['routerName']
             if router_name in router_names:
-                # releases[router_name] = asset['softwareVersions']['downloadedVersion'].split('-')[0]
                 releases[router_name] = asset['softwareVersions']['downloadedVersion']
         return releases
 
@@ -218,57 +217,34 @@ class RestGraphqlApi(object):
                 break
         return releases
 
-    def router_is_downloading(self, router_name):
+    def get_full_release(self, router_name, target):
+        available_releases = self.get_available_releases(router_name)
+        full_release = None
+        for release in available_releases:
+            if release.startswith(target):
+                full_release = release
+                break
+        if not full_release:
+            debug(f'Available_releases: {available_releases}')
+        return full_release
+
+    def get_router_status(self, router_name):
         self.get_assets()
-        router_assets = []
+        statuses = []
         for asset in self.assets:
             if router_name == asset['routerName']:
-                router_assets.append(asset)
-
-        if not router_assets:
-            warning(f'No assets for router {router_name} found. This should not happen.')
-            return None, None
-
-        for asset in router_assets:
-            in_progress = asset['softwareVersions']['refresh']['inProgress']
-            text = asset['text']
-            if in_progress:
-                return 'Download in progress', text
-
-        for asset in router_assets:
-            downloading = asset['softwareVersions']['currentlyDownloadingVersion']
-            text = asset['text']
-            if downloading:
-                return downloading, text
-
-        return None, None
-
-    def router_is_upgrading(self, router_name):
-        self.get_assets()
-        router_assets = []
-        for asset in self.assets:
-            if router_name == asset['routerName']:
-                router_assets.append(asset)
-
-        if not router_assets:
-            warning(f'No assets for router {router_name} found. This should not happen.')
-            return None, None
-
-        if any([asset['status'] == 'UPGRADING' for asset in router_assets]):
-            texts = []
-            for asset in router_assets:
                 status = asset['status']
-                if status == 'UPGRADING':
-                    texts.append(asset['text'])
+                text = asset['text']
+                if asset['softwareVersions']['refresh']['inProgress']:
+                    status = 'DOWNLOADING'
+                if asset['softwareVersions']['currentlyDownloadingVersion']:
+                    status = 'DOWNLOADING'
+                statuses.append((status, text))
 
-            for asset in router_assets:
-                status = asset['status']
-                if status == 'UPGRADING':
-                    return status, '|'.join(texts)
-            # asset['softwareVersions']['currentlyUpgradingVersion'] is reflecting the currently upgrading router
-        return None, None
+        if not statuses:
+            warning(f'No assets for router {router_name} found. This should not happen.')
 
-
+        return statuses
 
     def download_release(self, router, release):
         data = {
@@ -285,7 +261,6 @@ class RestGraphqlApi(object):
             }
         }
         request = self.query(data)
-        #print(request.request.body)
 
     def upgrade_router(self, router, release):
         data = {
@@ -302,4 +277,3 @@ class RestGraphqlApi(object):
             }
         }
         request = self.query(data)
-        #print(request.request.body)

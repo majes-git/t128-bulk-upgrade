@@ -16,7 +16,6 @@ def is_positive(value):
     return number
 
 
-
 def parse_arguments():
     """Get commandline arguments."""
     parser = argparse.ArgumentParser(
@@ -47,11 +46,17 @@ def parse_arguments():
                         help='Filter routers based on FILTER (name.startswith, name.contains, name.equals, version.startswith, version.equals)')
     parser.add_argument('--router-file',
                         help='Read selected routers from file')
+    parser.add_argument('--status-file',
+                        help='Write router status to file')
     parser.add_argument('--debug',action='store_true',
                         help='Show debug messages')
     parser.add_argument('--dry-run', action='store_true',
                         help='Do not modify config, just print actions')
-    parser.add_argument('--version', action='version', version=f'{APP} 0.1')
+    parser.add_argument('--wait-running',action='store_true',
+                        help='Wait until an ugraded router is RUNNING before continue')
+    parser.add_argument('--ignore-download-errors',action='store_true',
+                        help='Ignore errors during download and continue with upgrades')
+    parser.add_argument('--version', action='version', version=f'{APP} 0.2')
     return parser.parse_args()
 
 
@@ -61,7 +66,7 @@ def filter_releases(releases):
         major, minor, patch = release.split('-')[0].split('.')[:3]
         version = 1000000 * int(major) + 1000 * int(minor) + int(patch)
         if version >= 5004000:
-            # inore all releases before 5.4.0
+            # ignore all releases before 5.4.0
             filtered.append(release)
     return filtered
 
@@ -128,44 +133,75 @@ def select_routers(api, args):
     return routers
 
 
-def download(api, routers, target, timeout, dry_run):
+def write_status(router_status):
+    try:
+        with open(status_file, 'w') as fd:
+            for router, status in router_status.items():
+                fd.write(f'{router:{max_len_router_name + 4}} {status}\n')
+    except NameError:
+        # status_file not definied -> skip
+        pass
+
+
+def download(api, routers, router_status, target, timeout, dry_run, ignore_errors=False):
     download_started = time.time()
     all_routers_ready_for_upgrade = False
+    first_loop = True
     while not all_routers_ready_for_upgrade:
         all_routers_ready_for_upgrade = True
         for router, releases in api.get_downloaded_releases(routers).items():
             # check if an upgrade is already in progress
-            is_upgrading, _ = api.router_is_upgrading(router)
-            if is_upgrading:
-                # ignore this router
+            status_data = api.get_router_status(router)
+            if not status_data:
+                # something went wrong - skip this router
                 continue
+            if len(status_data) <= 2:
+                statuses = [element[0] for element in status_data]
+                texts = '|'.join([element[1] for element in status_data])
+            else:
+                error('Status is undefined:', status_data)
 
-            releases = [get_unified_release(release) for release in releases]
-            if get_unified_release(target) not in releases:
-                # found a router has not downloaded the target release yet
+            if any([status == 'UPGRADING' for status in statuses]):
+                # ignore this router for download operation
+                router_status[router] = 'UPGRADE_IN_PROGRESS'
+
+            elif any([status == 'DOWNLOADING' for status in statuses]):
+                debug(f'Router {router} is downloading. Details: {texts}')
+                router_status[router] = 'DOWNLOAD_IN_PROGRESS'
                 all_routers_ready_for_upgrade = False
 
-                debug('Downloaded releases on {}: {}'.format(router, releases))
-                available_releases = api.get_available_releases(router)
-                full_release = None
-                for release in available_releases:
-                    if release.startswith(target):
-                        full_release = release
-                        break
-                if not full_release:
-                    error('Release', target, 'is not available on router', router)
-
-                status, text = api.router_is_downloading(router)
-                if status:
-                    debug('Status:', status)
-                    debug(f'Router {router} is already downloading. Details: {text}')
-                else:
+            else:
+                releases = [get_unified_release(release) for release in releases]
+                if get_unified_release(target) not in releases:
+                    # found a router has not downloaded the target release yet
+                    all_routers_ready_for_upgrade = False
+                    debug('Downloaded releases on {}: {}'.format(router, releases))
+                    full_release = api.get_full_release(router, target)
+                    if not full_release:
+                        write_status(router_status)
+                        api.write_assets_data()
+                        message = f'Release {target} is not available on router {router}'
+                        if ignore_errors:
+                            warning(message)
+                        else:
+                            error(message)
                     if dry_run:
                         debug('Argument --dry-run provided. Skipping downloads.')
                         all_routers_ready_for_upgrade = True
                     else:
                         info('Downloading', full_release, 'to router', router, '...')
                         api.download_release(router, full_release)
+                        router_status[router] = 'DOWNLOAD_IN_PROGRESS'
+
+                elif first_loop:
+                    info(f'Download skipped on {router}')
+                    router_status[router] = 'DOWNLOAD_NOT_NEEDED'
+
+                elif router_status.get(router) != 'DOWNLOAD_NOT_NEEDED':
+                    info(f'Download of {target} on {router} has completed.')
+                    router_status[router] = 'DOWNLOAD_COMPLETED'
+
+        write_status(router_status)
 
         if not all_routers_ready_for_upgrade:
             debug('Waiting 30 seconds until the next check if routers have downloaded the software...')
@@ -173,36 +209,68 @@ def download(api, routers, target, timeout, dry_run):
 
         now = time.time()
         if now - download_started > timeout:
-            error(f'Downloading current chunk took longer than {timeout} seconds.')
+            message = f'Downloading current chunk took longer than {timeout} seconds.'
+            if ignore_errors:
+                warning(message)
+                return
+            else:
+                error(message)
+
+        first_loop = False
 
 
-def upgrade(api, routers, target, timeout):
+def upgrade(api, routers, router_status, target, timeout, wait_running=False):
+    upgrade_done = {}
     upgrade_started = time.time()
     all_routers_done = False
     while not all_routers_done:
         all_routers_done = True
         for router in routers:
-            if api.get_running_release(router) != get_unified_release(target):
+            # get router status
+            status_data = api.get_router_status(router)
+            if not status_data:
+                # something went wrong - skip this router
+                continue
+            if len(status_data) <= 2:
+                statuses = [element[0] for element in status_data]
+                texts = '|'.join([element[1] for element in status_data])
+            else:
+                error('Status is undefined:', status_data)
+
+            if any([status == 'UPGRADING' for status in statuses]):
+                debug(f'Router {router} is upgrading. Details: {texts}')
+                router_status[router] = 'UPGRADE_IN_PROGRESS'
+                all_routers_done = False
+
+            elif api.get_running_release(router) != get_unified_release(target):
                 # router not yet done
                 all_routers_done = False
 
-                status, text = api.router_is_upgrading(router)
-                if status:
-                    #debug('Status:', status)
-                    debug(f'Router {router} is already upgrading. Details: {text}')
-                    # TODO: check if status == RUNNING????
-                    # TODO: is HA handled properly? (asset state - node1 vs. node2)
-                else:
-                    available_releases = api.get_available_releases(router)
-                    full_release = None
-                    for release in available_releases:
-                        if release.startswith(target):
-                            full_release = release
-                            break
+                if all([status == 'RUNNING' for status in statuses]):
+                    debug(f'Router {router} is in state RUNNING. Upgrading it.')
+                    full_release = api.get_full_release(router, target)
                     if not full_release:
-                        error('Release', target, 'is not available on router', router)
+                        write_status(router_status)
+                        api.write_assets_data()
+                        message = 'Release', target, 'is not available on router', router
+                        error(message)
                     info('Upgrading router', router, 'to release', full_release, '...')
                     api.upgrade_router(router, full_release)
+
+                if all([status == 'DISCONNECTED' for status in statuses]):
+                    debug(f'Router {router} is DISCONNECTED. Waiting for it to come back online.')
+
+            elif wait_running and any([status != 'RUNNING' for status in statuses]):
+                # router is not in RUNNING state, but already upgraded -> wait
+                debug(f'Router {router} was upgraded. Waiting for it to get into RUNNING state.')
+                all_routers_done = False
+
+            else:
+                if router_status.get(router) != 'UPGRADE_COMPLETED':
+                    router_status[router] = 'UPGRADE_COMPLETED'
+                    info(f'Upgrade of router {router} has completed.')
+
+        write_status(router_status)
 
         if not all_routers_done:
             debug('Waiting 30 seconds until the next check if routers are upgraded...')
@@ -214,6 +282,8 @@ def upgrade(api, routers, target, timeout):
 
 
 def main():
+    global status_file
+    global max_len_router_name
     args = parse_arguments()
 
     if args.debug:
@@ -243,17 +313,20 @@ def main():
     if args.release not in releases and args.release not in unified_releases:
         error('The specified release is not available.')
 
-    #routers = range(10)
-    debug('routers:', routers[:args.max])
+    if args.status_file:
+        status_file = args.status_file
+        max_len_router_name = max([len(router) for router in routers])
+    router_status = {}
+    debug('All matching routers:', ', '.join(routers[:args.max]))
     start = 0
     end = 0
-    max = (args.max or len(routers))
+    maximum = (args.max or len(routers))
     # iterate over routers up to maximum or all routers if no max given
-    while end < max:
+    while end < maximum:
         if args.parallel:
-            end = min(end + args.parallel, max)
+            end = min(end + args.parallel, maximum)
         else:
-            end = max
+            end = maximum
         chunk = list(routers[start:end])
         info('Processing routers in this chunk:', ', '.join(chunk))
         chunk_not_upgraded = []
@@ -261,15 +334,21 @@ def main():
             running = api.get_running_release(router)
             if not running:
                 warning('Could not retrieve running version for router:', router)
+                router_status[router] = 'UNKNOWN'
                 continue
             if is_older_release(running, args.release):
-                info('Router', router, 'is running version',
-                     running, 'and will be upgraded.')
+                info(f'Router {router} is running version {running} and will be upgraded.')
                 chunk_not_upgraded.append(router)
+            else:
+                info(f'Router {router} is already running version {running}. Skipping it.')
+                router_status[router] = 'NOOP'
 
+        write_status(router_status)
         if chunk_not_upgraded:
             download_timeout = (args.download_timeout or args.timeout)
-            download(api, chunk_not_upgraded, args.release, download_timeout, args.dry_run)
+            download(api, chunk_not_upgraded, router_status, args.release,
+                     download_timeout, args.dry_run, args.ignore_download_errors)
+            write_status(router_status)
             debug('All routers in the chunk are ready for the upgrade.')
 
             if args.download_only:
@@ -277,7 +356,9 @@ def main():
             elif args.dry_run:
                 debug('Argument --dry-run provided. Skipping upgrades.')
             else:
-                upgrade(api, chunk_not_upgraded, args.release, args.timeout)
+                upgrade(api, chunk_not_upgraded, router_status, args.release,
+                        args.timeout, args.wait_running)
+                write_status(router_status)
             info('Chunk has been completed.')
         else:
             # nothing to do in this chunk
