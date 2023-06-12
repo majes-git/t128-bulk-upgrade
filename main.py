@@ -181,11 +181,12 @@ def download(api, routers, router_status, target, timeout, dry_run, ignore_error
                         write_status(router_status)
                         api.write_assets_data()
                         message = f'Release {target} is not available on router {router}'
+                        router_status[router] = 'DOWNLOAD_NOT_POSSIBLE'
                         if ignore_errors:
                             warning(message)
                         else:
                             error(message)
-                    if dry_run:
+                    elif dry_run:
                         debug('Argument --dry-run provided. Skipping downloads.')
                         all_routers_ready_for_upgrade = True
                     else:
