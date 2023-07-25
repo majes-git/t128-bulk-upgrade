@@ -233,7 +233,7 @@ class RestGraphqlApi(object):
         statuses = []
         for asset in self.assets:
             if router_name == asset['routerName']:
-                status = asset['status']
+                status = asset['status'].upper()
                 text = asset['text']
                 if asset['softwareVersions']['refresh']['inProgress']:
                     status = 'DOWNLOADING'
