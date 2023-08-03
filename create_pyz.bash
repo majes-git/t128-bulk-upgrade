@@ -28,9 +28,14 @@ else
   scripts="$@"
 fi
 
-for script in $scripts; do
-  cp $script $tmpdir/__main__.py
-  $zipapp --python "/usr/bin/env python3" --output ${script}z $tmpdir
-done
+if [ $scripts = "main.py" ]; then
+  cp $scripts $tmpdir/__main__.py
+  $zipapp --python "/usr/bin/env python3" --output $(basename $(pwd)).pyz $tmpdir
+else
+  for script in $scripts; do
+    cp $script $tmpdir/__main__.py
+    $zipapp --python "/usr/bin/env python3" --output ${script}z $tmpdir
+  done
+fi
 
 rm -r $tmpdir
