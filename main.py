@@ -7,6 +7,8 @@ from lib.log import *
 from lib.rest import RestGraphqlApi, get_unified_release
 
 APP = 't128-bulk-upgrade'
+RUNNING_STATUSES = ('RUNNING', 'RESYNCHRONIZING')
+
 
 def is_positive(value):
     number = int(value)
@@ -261,7 +263,7 @@ def upgrade(api, routers, router_status, target, timeout, wait_running=False):
                 if all([status == 'DISCONNECTED' for status in statuses]):
                     debug(f'Router {router} is DISCONNECTED. Waiting for it to come back online.')
 
-            elif wait_running and any([status != 'RUNNING' for status in statuses]):
+            elif wait_running and any([status not in RUNNING_STATUSES for status in statuses]):
                 # router is not in RUNNING state, but already upgraded -> wait
                 debug(f'Router {router} was upgraded. Waiting for it to get into RUNNING state.')
                 all_routers_done = False
