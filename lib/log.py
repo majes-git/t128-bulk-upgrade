@@ -14,7 +14,7 @@ def set_debug(app='python3-logging'):
     # when debug is enabled, also log into a file
     try:
         os.mkdir(f'/tmp/{app}')
-    except FileExistsError:
+    except:
         pass
     try:
         log_file = '{:%Y-%m-%d_%H-%M-%S}.log'.format(datetime.now())
