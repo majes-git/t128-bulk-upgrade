@@ -213,6 +213,15 @@ def download(api, routers, router_status, target, timeout, dry_run, ignore_error
         now = time.time()
         if now - download_started > timeout:
             message = f'Downloading current chunk took longer than {timeout} seconds.'
+
+            # set all routers that are still in progress to timed out
+            for router, status in router_status.items():
+                if status == 'DOWNLOAD_IN_PROGRESS':
+                    router_status[router] = 'DOWNLOAD_TIMED_OUT'
+                    # remove router since it cannot be upgraded anyways
+                    routers.remove(router)
+            write_status(router_status)
+
             if ignore_errors:
                 warning(message)
                 return
@@ -290,7 +299,7 @@ def main():
     args = parse_arguments()
 
     if args.debug:
-        set_debug()
+        set_debug(APP)
 
     params = {}
     if args.host:
@@ -352,7 +361,7 @@ def main():
             download(api, chunk_not_upgraded, router_status, args.release,
                      download_timeout, args.dry_run, args.ignore_download_errors)
             write_status(router_status)
-            debug('All routers in the chunk are ready for the upgrade.')
+            debug(f'All {len(chunk_not_upgraded)} routers in the chunk are ready for the upgrade.')
 
             if args.download_only:
                 debug('Argument --download-only provided. Skipping upgrades.')
