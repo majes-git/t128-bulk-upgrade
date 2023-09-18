@@ -186,6 +186,8 @@ def download(api, routers, router_status, target, timeout, dry_run, ignore_error
                         router_status[router] = 'DOWNLOAD_NOT_POSSIBLE'
                         if ignore_errors:
                             warning(message)
+                            # ignore this router for further processing
+                            routers.remove(router)
                         else:
                             error(message)
                     elif dry_run:
