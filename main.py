@@ -48,6 +48,8 @@ def parse_arguments():
                         help='Filter routers based on FILTER (name.startswith, name.contains, name.equals, version.startswith, version.equals)')
     parser.add_argument('--router-file',
                         help='Read selected routers from file')
+    parser.add_argument('--blacklist',
+                        help='Ignore routers in blacklist file')
     parser.add_argument('--status-file',
                         help='Write router status to file')
     parser.add_argument('--debug',action='store_true',
@@ -96,6 +98,13 @@ def select_routers(api, args):
     else:
         routers = all_routers_names
 
+    if args.blacklist:
+        with open(args.blacklist) as fd:
+            for name in fd.read().splitlines():
+                if name in routers.copy():
+                    debug(f'Router {name} is blacklisted.')
+                    routers.remove(name)
+
     if args.filter:
         if '=' not in args.filter:
             error('Filter is incorrect. Exiting.')
@@ -121,17 +130,19 @@ def select_routers(api, args):
         if key.startswith('version.'):
             api.get_assets()
             assets = api.assets
-            routers = []
+            candidates = []
             if key == 'version.equals':
                 for asset in assets:
                     if asset['t128Version'] == value:
-                        routers.append(asset['routerName'])
-                return list(set(routers))
+                        candidates.append(asset['routerName'])
             if key == 'version.startswith':
                 for asset in assets:
                     if asset['t128Version'].startswith(value):
-                        routers.append(asset['routerName'])
-                return list(set(routers))
+                        candidates.append(asset['routerName'])
+            for name in routers.copy():
+                if name not in candidates:
+                    routers.remove(name)
+
     return routers
 
 
