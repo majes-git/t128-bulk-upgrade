@@ -45,7 +45,7 @@ def parse_arguments():
     parser.add_argument('--download-timeout', type=int,
                         help='Define a different --timeout for downloads (default: use the same timeout for download and upgrade)')
     parser.add_argument('--filter', '-f',
-                        help='Filter routers based on FILTER (name.startswith, name.contains, name.equals, version.startswith, version.equals)')
+                        help='Filter routers based on FILTER (name.list, name.startswith, name.contains, name.equals, version.startswith, version.equals)')
     parser.add_argument('--router-file',
                         help='Read selected routers from file')
     parser.add_argument('--blacklist',
@@ -110,6 +110,11 @@ def select_routers(api, args):
             error('Filter is incorrect. Exiting.')
 
         key, value = args.filter.split('=')
+        if key == 'name.list':
+            for name in routers.copy():
+                if name not in value.split(','):
+                    routers.remove(name)
+            return routers
         if key == 'name.startswith':
             for name in routers.copy():
                 if not name.startswith(value):
