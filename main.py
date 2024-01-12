@@ -44,7 +44,7 @@ def parse_arguments():
                         help='Stop processing when one router is not finished within TIMEOUT seconds')
     parser.add_argument('--download-timeout', type=int,
                         help='Define a different --timeout for downloads (default: use the same timeout for download and upgrade)')
-    parser.add_argument('--filter', '-f', action='extend', nargs='+',
+    parser.add_argument('--filter', '-f', action='append',
                         help='Filter routers based on FILTER (name.list, name.startswith, name.contains, name.equals, version.startswith, version.equals)')
     parser.add_argument('--router-file',
                         help='Read selected routers from file')
