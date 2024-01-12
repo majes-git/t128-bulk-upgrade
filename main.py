@@ -44,7 +44,7 @@ def parse_arguments():
                         help='Stop processing when one router is not finished within TIMEOUT seconds')
     parser.add_argument('--download-timeout', type=int,
                         help='Define a different --timeout for downloads (default: use the same timeout for download and upgrade)')
-    parser.add_argument('--filter', '-f',
+    parser.add_argument('--filter', '-f', action='extend', nargs='+',
                         help='Filter routers based on FILTER (name.list, name.startswith, name.contains, name.equals, version.startswith, version.equals)')
     parser.add_argument('--router-file',
                         help='Read selected routers from file')
@@ -106,47 +106,48 @@ def select_routers(api, args):
                     routers.remove(name)
 
     if args.filter:
-        if '=' not in args.filter:
-            error('Filter is incorrect. Exiting.')
+        for filter in args.filter:
+            if '=' not in filter:
+                error('Filter is incorrect. Exiting.')
 
-        key, value = args.filter.split('=')
-        if key == 'name.list':
-            for name in routers.copy():
-                if name not in value.split(','):
-                    routers.remove(name)
-            return routers
-        if key == 'name.startswith':
-            for name in routers.copy():
-                if not name.startswith(value):
-                    routers.remove(name)
-            return routers
-        if key == 'name.equals':
-            if value in routers:
-                routers = [value]
-            else:
-                routers = []
-            return routers
-        if key == 'name.contains':
-            for name in routers.copy():
-                if value not in name:
-                    routers.remove(name)
-            return routers
+            key, value = filter.split('=')
+            if key == 'name.list':
+                for name in routers.copy():
+                    if name not in value.split(','):
+                        routers.remove(name)
+                continue
+            if key == 'name.startswith':
+                for name in routers.copy():
+                    if not name.startswith(value):
+                        routers.remove(name)
+                continue
+            if key == 'name.equals':
+                if value in routers:
+                    routers = [value]
+                else:
+                    routers = []
+                continue
+            if key == 'name.contains':
+                for name in routers.copy():
+                    if value not in name:
+                        routers.remove(name)
+                continue
 
-        if key.startswith('version.'):
-            api.get_assets()
-            assets = api.assets
-            candidates = []
-            if key == 'version.equals':
-                for asset in assets:
-                    if asset['t128Version'] == value:
-                        candidates.append(asset['routerName'])
-            if key == 'version.startswith':
-                for asset in assets:
-                    if asset['t128Version'].startswith(value):
-                        candidates.append(asset['routerName'])
-            for name in routers.copy():
-                if name not in candidates:
-                    routers.remove(name)
+            if key.startswith('version.'):
+                api.get_assets()
+                assets = api.assets
+                candidates = []
+                if key == 'version.equals':
+                    for asset in assets:
+                        if asset['t128Version'] == value:
+                            candidates.append(asset['routerName'])
+                if key == 'version.startswith':
+                    for asset in assets:
+                        if asset['t128Version'].startswith(value):
+                            candidates.append(asset['routerName'])
+                for name in routers.copy():
+                    if name not in candidates:
+                        routers.remove(name)
 
     return routers
 
