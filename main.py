@@ -89,6 +89,7 @@ def is_older_release(first, second):
 
 def select_routers(api, args):
     all_routers_names = api.get_router_names()
+
     if args.router_file:
         routers = []
         with open(args.router_file) as fd:
@@ -97,6 +98,8 @@ def select_routers(api, args):
                     routers.append(name)
     else:
         routers = all_routers_names
+        # don't include the conductor itself
+        routers.remove(api.get_conductor_name())
 
     if args.blacklist:
         with open(args.blacklist) as fd:
@@ -134,8 +137,7 @@ def select_routers(api, args):
                 continue
 
             if key.startswith('version.'):
-                api.get_assets()
-                assets = api.assets
+                assets = api.get_assets()
                 candidates = []
                 if key == 'version.equals':
                     for asset in assets:
@@ -335,6 +337,9 @@ def main():
         for release in releases:
             print(' *', release)
         return
+
+    if is_older_release(api.get_conductor_version(), args.release):
+        error('The specified release must not be newer than conductor running.')
 
     routers = select_routers(api, args)
     if not routers:

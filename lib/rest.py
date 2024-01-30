@@ -132,6 +132,14 @@ class RestGraphqlApi(object):
             message = request.json()['message']
             raise UnauthorizedException(message)
 
+    def get_conductor_name(self):
+        system = self.get('/system').json()
+        return system['router']
+
+    def get_conductor_version(self):
+        system = self.get('/system').json()
+        return system['softwareVersion']
+
     def get_routers(self):
         return self.get('/router').json()
 
@@ -188,6 +196,7 @@ class RestGraphqlApi(object):
             if r.status_code == 200:
                 self.assets = r.json()
                 self.assets_fetched_ts = now
+        return self.assets
 
     def write_assets_data(self):
         with open('/tmp/assets.json', 'w') as fd:
