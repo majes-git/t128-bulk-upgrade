@@ -90,6 +90,7 @@ def is_older_release(first, second):
 
 def select_routers(api, args):
     all_routers_names = api.get_router_names()
+    assets = api.get_assets()
 
     if args.router_file:
         routers = []
@@ -101,6 +102,16 @@ def select_routers(api, args):
         routers = all_routers_names
         # don't include the conductor itself
         routers.remove(api.get_conductor_name())
+
+        # include only routers that need an upgrade
+        candidates = []
+        for asset in assets:
+            if asset['t128Version']:
+                if is_older_release(asset['t128Version'], args.release):
+                    candidates.append(asset['routerName'])
+        for name in routers.copy():
+            if name not in candidates:
+                routers.remove(name)
 
     if args.blacklist:
         with open(args.blacklist) as fd:
@@ -138,7 +149,6 @@ def select_routers(api, args):
                 continue
 
             if key.startswith('version.'):
-                assets = api.get_assets()
                 candidates = []
                 if key == 'version.equals':
                     for asset in assets:
