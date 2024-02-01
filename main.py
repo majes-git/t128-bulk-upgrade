@@ -92,23 +92,27 @@ def select_routers(api, args):
     all_routers_names = api.get_router_names()
     assets = api.get_assets()
 
+    candidates = []
+    for asset in assets:
+        if asset['t128Version']:
+            if is_older_release(asset['t128Version'], args.release):
+                candidates.append(asset['routerName'])
+
     if args.router_file:
         routers = []
         with open(args.router_file) as fd:
             for name in fd.read().splitlines():
                 if name in all_routers_names:
-                    routers.append(name)
+                    if name not in candidates:
+                        debug(f'Ignoring {name} from router_file - no upgrade needed.')
+                    else:
+                        routers.append(name)
     else:
         routers = all_routers_names
         # don't include the conductor itself
         routers.remove(api.get_conductor_name())
 
         # include only routers that need an upgrade
-        candidates = []
-        for asset in assets:
-            if asset['t128Version']:
-                if is_older_release(asset['t128Version'], args.release):
-                    candidates.append(asset['routerName'])
         for name in routers.copy():
             if name not in candidates:
                 routers.remove(name)
