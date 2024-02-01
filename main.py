@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import time
 
 from lib.log import *
@@ -321,6 +322,9 @@ def main():
 
     if args.debug:
         set_debug(APP)
+
+    # do not use a proxy server for localhost connections
+    os.environ['no_proxy'] = 'localhost'
 
     params = {}
     if args.host:

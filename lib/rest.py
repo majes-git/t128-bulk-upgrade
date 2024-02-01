@@ -179,13 +179,14 @@ class RestGraphqlApi(object):
                 return releases
 
         data = self.get('/upgrade/versions?onlyUpgrades=false').json()
-        releases = [d['version'].replace('.el7', '') for d in data]
-        # write releases to cache
-        try:
-            with open(cache_location, 'w') as fd:
-                json.dump(releases, fd)
-        except:
-            pass
+        if data:
+            releases = [d['version'].replace('.el7', '') for d in data]
+            # write releases to cache
+            try:
+                with open(cache_location, 'w') as fd:
+                    json.dump(releases, fd)
+            except:
+                pass
         return releases
 
     def get_assets(self):
