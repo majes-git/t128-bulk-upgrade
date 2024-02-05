@@ -61,7 +61,7 @@ def parse_arguments():
                         help='Wait until an ugraded router is RUNNING before continue')
     parser.add_argument('--ignore-download-errors',action='store_true',
                         help='Ignore errors during download and continue with upgrades')
-    parser.add_argument('--version', action='version', version=f'{APP} 0.2')
+    parser.add_argument('--version', action='version', version=f'{APP} 0.3')
     return parser.parse_args()
 
 
@@ -166,6 +166,7 @@ def select_routers(api, args):
                     if name not in candidates:
                         routers.remove(name)
 
+    debug('Total number of (filtered) upgradable routers:', len(routers))
     return routers
 
 
