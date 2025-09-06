@@ -61,7 +61,9 @@ def parse_arguments():
                         help='Wait until an ugraded router is RUNNING before continue')
     parser.add_argument('--ignore-download-errors',action='store_true',
                         help='Ignore errors during download and continue with upgrades')
-    parser.add_argument('--version', action='version', version=f'{APP} 0.3')
+    parser.add_argument('--yum-cache-refresh', action='store_true',
+                        help='Trigger "send command yum-cache-refresh" on target router before download')
+    parser.add_argument('--version', action='version', version=f'{APP} 0.4')
     return parser.parse_args()
 
 
@@ -180,7 +182,7 @@ def write_status(router_status):
         pass
 
 
-def download(api, routers, router_status, target, timeout, dry_run, ignore_errors=False):
+def download(api, routers, router_status, target, timeout, dry_run, ignore_errors=False, yum_cache_refresh=False):
     download_started = time.time()
     all_routers_ready_for_upgrade = False
     first_loop = True
@@ -230,6 +232,9 @@ def download(api, routers, router_status, target, timeout, dry_run, ignore_error
                         all_routers_ready_for_upgrade = True
                     else:
                         info('Downloading', full_release, 'to router', router, '...')
+                        if yum_cache_refresh:
+                            debug('Send command yum-cache-refresh to router', router)
+                            api.send_command_yum_cache_refresh(router)
                         api.download_release(router, full_release)
                         router_status[router] = 'DOWNLOAD_IN_PROGRESS'
 
@@ -402,7 +407,7 @@ def main():
         if chunk_not_upgraded:
             download_timeout = (args.download_timeout or args.timeout)
             download(api, chunk_not_upgraded, router_status, args.release,
-                     download_timeout, args.dry_run, args.ignore_download_errors)
+                     download_timeout, args.dry_run, args.ignore_download_errors, args.yum_cache_refresh)
             write_status(router_status)
             debug(f'All {len(chunk_not_upgraded)} routers in the chunk are ready for the upgrade.')
 

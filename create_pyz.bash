@@ -20,6 +20,7 @@ if [ -z "$requirements" ]; then
 fi
 if [ -n "$requirements" ]; then
   python3 -m pip install $requirements --target $tmpdir
+  find $tmpdir -name '*.so' -delete
 fi
 
 if [ $# -lt 1 ]; then

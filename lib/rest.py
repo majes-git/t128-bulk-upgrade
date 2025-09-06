@@ -256,6 +256,9 @@ class RestGraphqlApi(object):
 
         return statuses
 
+    def send_command_yum_cache_refresh(self, router):
+        return self.post('/provisioning/refresh', {'routerNames': [router]})
+
     def download_release(self, router, release):
         data = {
             'query': '''
